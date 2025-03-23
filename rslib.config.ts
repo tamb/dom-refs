@@ -8,4 +8,9 @@ export default defineConfig({
       dts: true,
     },
   ],
+  output: {
+    minify: {
+      js: true,
+    },
+  },
 });
