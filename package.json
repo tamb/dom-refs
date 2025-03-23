@@ -33,5 +33,15 @@
     "typescript-eslint": "^8.25.0",
     "vitest": "^3.0.9"
   },
-  "private": true
+  "private": false,
+  "author":"tamb",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tamb/referee.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tamb/referee/issues"
+  },
+  "homepage": "https://github.com/tamb/referee#readme"
 }

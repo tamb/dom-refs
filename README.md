@@ -1,23 +1,11 @@
-# Rslib project
+# Referee
 
-## Setup
+A simple library for creating a map of string keys to DOM elements or arrays of elements based on the presence of `data-ref` or `data-ref-array` attributes.
 
-Install the dependencies:
+## Installation
 
+Using npm:
 ```bash
-pnpm install
+npm install referee
 ```
 
-## Get started
-
-Build the library:
-
-```bash
-pnpm build
-```
-
-Build the library in watch mode:
-
-```bash
-pnpm dev
-```
