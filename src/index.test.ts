@@ -1,148 +1,257 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createRefs, refWatcher } from './index'; // Adjust the import path
+/// <reference lib="dom" />
 
-describe('createRefs and refWatcher', () => {
-  let root: HTMLElement;
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createRefs, refWatcher } from './index';
 
-  // Setup DOM before each test
+describe('Refs Library', () => {
+  let root: HTMLDivElement;
+
   beforeEach(() => {
+    // Reset DOM before each test
+    document.body.innerHTML = '';
     root = document.createElement('div');
     document.body.appendChild(root);
   });
 
-  // Cleanup after each test
-  afterEach(() => {
-    document.body.innerHTML = '';
-  });
-
   describe('createRefs', () => {
-    it('creates refs from data-ref', () => {
-      root.innerHTML = '<div data-ref="header">Header</div>';
-      const refs = createRefs(root);
-      expect(refs.get('header')).toBe(root.querySelector('[data-ref="header"]'));
+    it('creates refs from data-ref attributes', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ref', 'header.title');
+      root.appendChild(div);
+
+      const { refs } = createRefs(root);
+      expect(refs.header.title).toBe(div);
     });
 
-    it('creates refs from id', () => {
-      root.innerHTML = '<span id="title">Title</span>';
-      const refs = createRefs(root);
-      expect(refs.get('title')).toBe(root.querySelector('#title'));
+    it('creates array refs from data-ref-array attributes', () => {
+      const div1 = document.createElement('div');
+      div1.setAttribute('data-ref-array', 'items, list');
+      const div2 = document.createElement('div');
+      div2.setAttribute('data-ref-array', 'items');
+      root.appendChild(div1);
+      root.appendChild(div2);
+
+      const { refs } = createRefs(root);
+      expect(refs.items).toEqual([div1, div2]);
+      expect(refs.list).toEqual([div1]);
     });
 
-    it('creates array refs from data-ref-array', () => {
-      root.innerHTML = `
-        <p data-ref-array="items">Item 1</p>
-        <p data-ref-array="items">Item 2</p>
-      `;
-      const refs = createRefs(root);
-      const items = refs.get('items');
-      expect(Array.isArray(items)).toBe(true);
-      expect(items).toHaveLength(2);
-      expect(items).toContain(root.querySelectorAll('[data-ref-array="items"]')[0]);
-      expect(items).toContain(root.querySelectorAll('[data-ref-array="items"]')[1]);
+    it('creates refs from id attributes', () => {
+      const div = document.createElement('div');
+      div.id = 'main';
+      root.appendChild(div);
+
+      const { refs } = createRefs(root);
+      expect(refs.main).toBe(div);
     });
 
-    it('supports multiple data-ref-array keys', () => {
-      root.innerHTML = '<div data-ref-array="items, highlights">Item</div>';
-      const refs = createRefs(root);
-      const items : Element[] | undefined = refs.get('items');
-      const highlights : Element[] | undefined = refs.get('highlights');
-      expect(Array.isArray(items)).toBe(true);
-      expect(Array.isArray(highlights)).toBe(true);
-      expect(items).toHaveLength(1);
-      expect(highlights).toHaveLength(1);
-      expect(items[0]).toBe(root.querySelector('[data-ref-array]'));
-      expect(highlights[0]).toBe(root.querySelector('[data-ref-array]'));
+    it('respects custom selector', () => {
+      const div1 = document.createElement('div');
+      div1.setAttribute('data-ref', 'test.one');
+      div1.className = 'ref-item';
+      const div2 = document.createElement('div');
+      div2.setAttribute('data-ref', 'test.two');
+      root.appendChild(div1);
+      root.appendChild(div2);
+
+      const { refs } = createRefs(root, { selector: '.ref-item' });
+      expect(refs.test.one).toBe(div1);
+      expect(refs.test.two).toBeUndefined();
     });
 
-    it('prioritizes data-ref over data-ref-array and id', () => {
-      root.innerHTML = '<div data-ref="special" data-ref-array="items" id="id">Special</div>';
-      const refs = createRefs(root);
-      expect(refs.get('special')).toBe(root.querySelector('[data-ref="special"]'));
-      expect(refs.get('items')).toContain(root.querySelector('[data-ref="special"]'));
-      expect(refs.get('id')).toBeUndefined(); // data-ref takes precedence
+    it('respects custom attribute names', () => {
+      const div = document.createElement('div');
+      div.setAttribute('custom-ref', 'header.title');
+      root.appendChild(div);
+
+      const { refs } = createRefs(root, { refAttr: 'custom-ref' });
+      expect(refs.header.title).toBe(div);
+    });
+
+    it('clears all refs', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ref', 'header.title');
+      root.appendChild(div);
+
+      const { refs, clear } = createRefs(root);
+      expect(refs.header.title).toBe(div);
+      clear();
+      expect(refs.header).toBeUndefined();
+    });
+
+    it('maintains reverseMap correctly', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ref', 'header.title');
+      div.setAttribute('data-ref-array', 'items');
+      root.appendChild(div);
+
+      const { reverseMap } = createRefs(root);
+      const paths = reverseMap.get(div);
+      expect(paths).toEqual(['header.title', 'items']);
+    });
+
+    it('works with generic types', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ref', 'test.div');
+      root.appendChild(div);
+
+      const { refs } = createRefs<HTMLDivElement>(root);
+      expect(refs.test.div).toBeInstanceOf(HTMLDivElement);
     });
   });
 
   describe('refWatcher', () => {
-    it('adds new refs dynamically', async () => {
-      root.innerHTML = '<div data-ref="initial">Initial</div>';
-      const refs = createRefs(root);
+    it('adds new elements dynamically', async () => {
+      const { refs, reverseMap } = createRefs(root);
       const watcher = refWatcher(refs, root);
 
-      // Add a new element
-      const newDiv = document.createElement('div');
-      newDiv.setAttribute('data-ref', 'dynamic');
-      newDiv.textContent = 'Dynamic';
-      root.appendChild(newDiv);
+      const div = document.createElement('div');
+      div.setAttribute('data-ref', 'dynamic.test');
+      root.appendChild(div);
 
-      // Wait briefly for MutationObserver to process
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await vi.waitFor(
+        () => {
+          expect(refs.dynamic.test).toBe(div);
+          expect(reverseMap.get(div)).toEqual(['dynamic.test']);
+        },
+        { timeout: 100 },
+      );
 
-      expect(refs.get('initial')).toBe(root.querySelector('[data-ref="initial"]'));
-      expect(refs.get('dynamic')).toBe(newDiv);
       watcher.stop();
     });
 
-    it('adds to data-ref-array dynamically', async () => {
-      root.innerHTML = '<p data-ref-array="items">Item 1</p>';
-      const refs = createRefs(root);
+    it('removes elements dynamically', async () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ref', 'dynamic.test');
+      root.appendChild(div);
+
+      const { refs, reverseMap } = createRefs(root);
       const watcher = refWatcher(refs, root);
 
-      // Add a new element to the array
-      const newP = document.createElement('p');
-      newP.setAttribute('data-ref-array', 'items');
-      newP.textContent = 'Item 2';
-      root.appendChild(newP);
+      root.removeChild(div);
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await vi.waitFor(
+        () => {
+          expect(refs.dynamic).toBeUndefined();
+          expect(reverseMap.get(div)).toBeUndefined();
+        },
+        { timeout: 100 },
+      );
 
-      const items = refs.get('items');
-      expect(Array.isArray(items)).toBe(true);
-      expect(items).toHaveLength(2);
-      expect(items).toContain(root.querySelectorAll('[data-ref-array="items"]')[0]);
-      expect(items).toContain(newP);
       watcher.stop();
     });
 
-    it('supports nested elements', async () => {
-      root.innerHTML = '<div data-ref="outer">Outer</div>';
-      const refs = createRefs(root);
-      const watcher = refWatcher(refs, root);
+    it('respects selector in watcher', async () => {
+      const { refs } = createRefs(root);
+      const watcher = refWatcher(refs, root, { selector: '.watch-me' });
 
-      // Add a nested structure
-      const container = document.createElement('div');
-      container.innerHTML = '<span data-ref="inner">Inner</span>';
-      root.appendChild(container);
+      const div1 = document.createElement('div');
+      div1.setAttribute('data-ref', 'test.one');
+      div1.className = 'watch-me';
+      const div2 = document.createElement('div');
+      div2.setAttribute('data-ref', 'test.two');
+      root.appendChild(div1);
+      root.appendChild(div2);
 
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await vi.waitFor(
+        () => {
+          expect(refs.test.one).toBe(div1);
+          expect(refs.test.two).toBeUndefined();
+        },
+        { timeout: 100 },
+      );
 
-      expect(refs.get('outer')).toBe(root.querySelector('[data-ref="outer"]'));
-      expect(refs.get('inner')).toBe(container.querySelector('[data-ref="inner"]'));
       watcher.stop();
     });
 
-    it('stops observing when stop is called', async () => {
-      const refs = createRefs(root);
+    it('handles nested elements', async () => {
+      const { refs } = createRefs(root);
       const watcher = refWatcher(refs, root);
 
-      // Add an element before stopping
-      const firstDiv = document.createElement('div');
-      firstDiv.setAttribute('data-ref', 'first');
-      root.appendChild(firstDiv);
+      const parent = document.createElement('div');
+      const child = document.createElement('div');
+      child.setAttribute('data-ref', 'nested.child');
+      parent.appendChild(child);
+      root.appendChild(parent);
 
-      await new Promise(resolve => setTimeout(resolve, 10));
-      expect(refs.get('first')).toBe(firstDiv);
+      await vi.waitFor(
+        () => {
+          expect(refs.nested.child).toBe(child);
+        },
+        { timeout: 100 },
+      );
 
-      // Stop the watcher
+      watcher.stop();
+    });
+
+    it('stops watching when stop is called', async () => {
+      const { refs } = createRefs(root);
+      const watcher = refWatcher(refs, root);
       watcher.stop();
 
-      // Add another element after stopping
-      const secondDiv = document.createElement('div');
-      secondDiv.setAttribute('data-ref', 'second');
-      root.appendChild(secondDiv);
+      const div = document.createElement('div');
+      div.setAttribute('data-ref', 'after.stop');
+      root.appendChild(div);
 
-      await new Promise(resolve => setTimeout(resolve, 10));
-      expect(refs.get('second')).toBeUndefined(); // Should not be added
+      await vi.waitFor(
+        () => {
+          expect(refs.after).toBeUndefined();
+        },
+        { timeout: 100 },
+      );
+    });
+
+    it('respects custom attribute names in watcher', async () => {
+      const { refs } = createRefs(root);
+      const watcher = refWatcher(refs, root, { refAttr: 'custom-ref' });
+
+      const div = document.createElement('div');
+      div.setAttribute('custom-ref', 'custom.test');
+      root.appendChild(div);
+
+      await vi.waitFor(
+        () => {
+          expect(refs.custom.test).toBe(div);
+        },
+        { timeout: 100 },
+      );
+
+      watcher.stop();
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('handles duplicate data-ref values', () => {
+      const div1 = document.createElement('div');
+      div1.setAttribute('data-ref', 'test');
+      const div2 = document.createElement('div');
+      div2.setAttribute('data-ref', 'test');
+      root.appendChild(div1);
+      root.appendChild(div2);
+
+      const { refs } = createRefs(root);
+      expect(refs.test).toBe(div2); // Last one wins
+    });
+
+    it('handles malformed data-ref-array', () => {
+      const div = document.createElement('div');
+      div.setAttribute('data-ref-array', 'items,, ,list');
+      root.appendChild(div);
+
+      const { refs } = createRefs(root);
+      expect(refs.items).toEqual([div]);
+      expect(refs.list).toEqual([div]);
+    });
+
+    it('handles empty refs object', () => {
+      const { refs, clear } = createRefs(root);
+      expect(Object.keys(refs).length).toBe(0);
+      clear(); // Should not throw
+    });
+
+    it('handles invalid selector gracefully', () => {
+      const { refs } = createRefs(root, { selector: 'invalid::selector' });
+      expect(Object.keys(refs).length).toBe(0); // No matches, no crash
     });
   });
 });

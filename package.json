@@ -1,5 +1,5 @@
 {
-  "name": "referee",
+  "name": "dom-refs",
   "version": "1.0.0",
   "type": "module",
   "exports": {
@@ -34,14 +34,26 @@
     "vitest": "^3.0.9"
   },
   "private": false,
-  "author":"tamb",
+  "author": "tamb",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tamb/referee.git"
+    "url": "git+https://github.com/tamb/dom-refs.git"
   },
   "bugs": {
-    "url": "https://github.com/tamb/referee/issues"
+    "url": "https://github.com/tamb/dom-refs/issues"
   },
-  "homepage": "https://github.com/tamb/referee#readme"
+  "homepage": "https://github.com/tamb/dom-refs#readme",
+  "description": "A simple library for creating a map of string keys to DOM elements or arrays of elements based on the presence of `data-ref` or `data-ref-array` attributes.",
+  "keywords": [
+    "dom",
+    "refs",
+    "data-ref",
+    "data-ref-array",
+    "id",
+    "selector",
+    "MutationObserver",
+    "typescript",
+    "elements"
+  ]
 }
