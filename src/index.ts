@@ -1,83 +1,77 @@
 /// <reference lib="dom" />
 
-// Interface for nested refs object
-interface RefsObject {
-  [key: string]: Element | Element[] | RefsObject;
+interface RefsObject<T extends Element = Element> {
+  [key: string]: T | T[] | RefsObject<T>;
 }
 
-// Interface for refWatcher return type
+interface RefsHandle<T extends Element = Element> {
+  refs: RefsObject<T>;
+  reverseMap: WeakMap<T, string[]>;
+}
+
 interface RefWatcher {
   stop: () => void;
 }
 
-/**
- * Sets a value in a nested object using dot notation and updates the reverse map.
- * @param obj The refs object
- * @param reverseMap The WeakMap tracking element paths
- * @param path The dot-separated path (e.g., "my.item")
- * @param value The value to set (Element or Element[])
- */
-function setNestedValue(
-  obj: RefsObject,
-  reverseMap: WeakMap<Element, string[]>,
+interface RefsOptions {
+  refAttr?: string;
+  refArrayAttr?: string;
+  idAttr?: string;
+  selector?: string;
+}
+
+function setNestedValue<T extends Element>(
+  obj: RefsObject<T>,
+  reverseMap: WeakMap<T, string[]>,
   path: string,
-  value: Element | Element[]
+  value: T | T[]
 ): void {
   const keys: string[] = path.split(".");
-  let current: RefsObject = obj;
+  let current: RefsObject<T> = obj;
 
   for (let i = 0; i < keys.length - 1; i++) {
     const key: string = keys[i];
     if (!current[key] || !(current[key] instanceof Object) || Array.isArray(current[key])) {
       current[key] = {};
     }
-    current = current[key] as RefsObject;
+    current = current[key] as RefsObject<T>;
   }
 
   const finalKey: string = keys[keys.length - 1];
   current[finalKey] = value;
 
-  // Update reverse map for single Element
   if (value instanceof Element) {
-    const paths: string[] = reverseMap.get(value) || [];
+    const paths: string[] = reverseMap.get(value as T) || [];
     if (!paths.includes(path)) {
       paths.push(path);
-      reverseMap.set(value, paths);
+      reverseMap.set(value as T, paths);
     }
   }
 }
 
-/**
- * Appends an element to an array in a nested object and updates the reverse map.
- * @param obj The refs object
- * @param reverseMap The WeakMap tracking element paths
- * @param path The dot-separated path (e.g., "items.list")
- * @param element The element to append
- */
-function appendNestedArray(
-  obj: RefsObject,
-  reverseMap: WeakMap<Element, string[]>,
+function appendNestedArray<T extends Element>(
+  obj: RefsObject<T>,
+  reverseMap: WeakMap<T, string[]>,
   path: string,
-  element: Element
+  element: T
 ): void {
   const keys: string[] = path.split(".");
-  let current: RefsObject = obj;
+  let current: RefsObject<T> = obj;
 
   for (let i = 0; i < keys.length - 1; i++) {
     const key: string = keys[i];
     if (!current[key] || !(current[key] instanceof Object) || Array.isArray(current[key])) {
       current[key] = {};
     }
-    current = current[key] as RefsObject;
+    current = current[key] as RefsObject<T>;
   }
 
   const finalKey: string = keys[keys.length - 1];
   if (!Array.isArray(current[finalKey])) {
     current[finalKey] = [];
   }
-  (current[finalKey] as Element[]).push(element);
+  (current[finalKey] as T[]).push(element);
 
-  // Update reverse map
   const paths: string[] = reverseMap.get(element) || [];
   if (!paths.includes(path)) {
     paths.push(path);
@@ -85,32 +79,31 @@ function appendNestedArray(
   }
 }
 
-/**
- * Removes an element from the refs object using its paths from the reverse map.
- * @param obj The refs object
- * @param reverseMap The WeakMap tracking element paths
- * @param element The element to remove
- */
-function removeElement(
-  obj: RefsObject,
-  reverseMap: WeakMap<Element, string[]>,
-  element: Element
+function removeElement<T extends Element>(
+  obj: RefsObject<T>,
+  reverseMap: WeakMap<T, string[]>,
+  element: T
 ): void {
   const paths: string[] | undefined = reverseMap.get(element);
-  if (!paths) return;
+  if (!paths || paths.length === 0) return;
+
+  let allPathsProcessed = true;
 
   paths.forEach((path: string) => {
     const keys: string[] = path.split(".");
-    let current: RefsObject = obj;
+    let current: RefsObject<T> = obj;
 
     for (let i = 0; i < keys.length - 1; i++) {
       const key: string = keys[i];
-      if (!current[key]) return;
-      current = current[key] as RefsObject;
+      if (!current[key]) {
+        allPathsProcessed = false;
+        return;
+      }
+      current = current[key] as RefsObject<T>;
     }
 
     const finalKey: string = keys[keys.length - 1];
-    const value: Element | Element[] | RefsObject | undefined = current[finalKey];
+    const value: T | T[] | RefsObject<T> | undefined = current[finalKey];
 
     if (value === element) {
       delete current[finalKey];
@@ -121,109 +114,170 @@ function removeElement(
         if (value.length === 0) {
           delete current[finalKey];
         }
+      } else {
+        allPathsProcessed = false;
       }
+    } else {
+      allPathsProcessed = false;
     }
   });
 
-  // Clean up reverse map
-  reverseMap.delete(element);
+  if (allPathsProcessed) {
+    const remainingPaths = paths.some((path: string) => {
+      const keys: string[] = path.split(".");
+      let current: RefsObject<T> = obj;
+      for (let i = 0; i < keys.length - 1; i++) {
+        if (!current[keys[i]]) return false;
+        current = current[keys[i]] as RefsObject<T>;
+      }
+      const finalValue = current[keys[keys.length - 1]];
+      return finalValue === element || (Array.isArray(finalValue) && finalValue.includes(element));
+    });
+
+    if (!remainingPaths) {
+      reverseMap.delete(element);
+    }
+  }
 }
 
 /**
  * Creates a nested object of DOM references with a reverse lookup map.
  * @param root The root element or document to search (defaults to document.body)
- * @returns A nested RefsObject
+ * @param selector Optional CSS selector to filter elements (e.g., ".my-refs")
+ * @param options Configuration for attribute names
+ * @returns A handle containing refs, reverseMap, and a clear method
+ * @example
+ * ```html
+ * <div data-ref="header.title">Title</div>
+ * <div data-ref-array="items, list">Item</div>
+ * ```
+ * ```typescript
+ * const { refs, clear } = createRefs();
+ * console.log(refs.header.title); // <div> element
+ * console.log(refs.items); // [<div>] array
+ * clear(); // Removes all references
+ * ```
  */
-function createRefs(root: Element | Document = document.body): RefsObject {
-  const refs: RefsObject = {};
-  const reverseMap: WeakMap<Element, string[]> = new WeakMap<Element, string[]>();
+function createRefs<T extends Element = Element>(
+  root: Element | Document = document.body,
+  options: RefsOptions = {}
+): RefsHandle<T> & { clear: () => void } {
+  const { refAttr = "data-ref", refArrayAttr = "data-ref-array", idAttr = "id" } = options;
+  const refs: RefsObject<T> = {};
+  const reverseMap: WeakMap<T, string[]> = new WeakMap<T, string[]>();
 
   const processElement = (element: Element): void => {
-    const refArray: string | null = element.getAttribute("data-ref-array");
+    const refArray: string | null = element.getAttribute(refArrayAttr);
     if (refArray) {
       const arrayKeys: string[] = refArray.split(",").map((key: string) => key.trim());
       arrayKeys.forEach((key: string) => {
         if (key) {
-          appendNestedArray(refs, reverseMap, key, element);
+          appendNestedArray(refs, reverseMap, key, element as T);
         }
       });
     }
 
-    const dataRef: string | null = element.getAttribute("data-ref");
+    const dataRef: string | null = element.getAttribute(refAttr);
     if (dataRef) {
-      setNestedValue(refs, reverseMap, dataRef, element);
+      setNestedValue(refs, reverseMap, dataRef, element as T);
       return;
     }
 
-    const id: string = element.id;
+    const id: string = (element as any)[idAttr];
     if (id) {
-      setNestedValue(refs, reverseMap, id, element);
+      setNestedValue(refs, reverseMap, id, element as T);
     }
   };
 
-  const allElements: NodeListOf<Element> = root.querySelectorAll("*");
+  const clear = (): void => {
+    for (const key in refs) {
+      delete refs[key];
+    }
+  };
+
+  const defaultSelector = `[${refAttr}],[${refArrayAttr}],[${idAttr}]`;
+  const allElements: NodeListOf<Element> = options.selector
+    ? root.querySelectorAll(options.selector)
+    : root.querySelectorAll(defaultSelector);
   allElements.forEach((element: Element) => processElement(element));
 
-  // Attach reverseMap to refs for refWatcher to use
-  (refs as any).__reverseMap = reverseMap;
-
-  return refs;
+  return { refs, reverseMap, clear };
 }
 
 /**
  * Watches the DOM and updates the refs object dynamically, including removals.
- * @param refs The RefsObject to update (with attached reverseMap)
+ * @param refsHandle The handle returned by createRefs
  * @param root The root element or document to observe (defaults to document.body)
+ * @param selector Optional CSS selector to filter elements
+ * @param options Configuration for attribute names
  * @returns A RefWatcher with a stop method
+ * @example
+ * ```typescript
+ * const refsHandle = createRefs();
+ * const watcher = refWatcher(refsHandle);
+ * // DOM changes are now tracked
+ * watcher.stop(); // Stops observing
+ * ```
  */
-function refWatcher(refs: RefsObject, root: Element | Document = document.body): RefWatcher {
-  const reverseMap: WeakMap<Element, string[]> = (refs as any).__reverseMap;
+function refWatcher<T extends Element>(
+  refsHandle: RefsHandle<T>,
+  root: Element | Document = document.body,
+  selector?: string,
+  options: RefsOptions = {}
+): RefWatcher {
+  const { refAttr = "data-ref", refArrayAttr = "data-ref-array", idAttr = "id" } = options;
+  const { refs, reverseMap } = refsHandle;
 
   const processElement = (element: Element): void => {
-    const refArray: string | null = element.getAttribute("data-ref-array");
+    const refArray: string | null = element.getAttribute(refArrayAttr);
     if (refArray) {
       const arrayKeys: string[] = refArray.split(",").map((key: string) => key.trim());
       arrayKeys.forEach((key: string) => {
         if (key) {
-          appendNestedArray(refs, reverseMap, key, element);
+          appendNestedArray(refs, reverseMap, key, element as T);
         }
       });
     }
 
-    const dataRef: string | null = element.getAttribute("data-ref");
+    const dataRef: string | null = element.getAttribute(refAttr);
     if (dataRef) {
-      setNestedValue(refs, reverseMap, dataRef, element);
+      setNestedValue(refs, reverseMap, dataRef, element as T);
       return;
     }
 
-    const id: string = element.id;
+    const id: string = (element as any)[idAttr];
     if (id) {
-      setNestedValue(refs, reverseMap, id, element);
+      setNestedValue(refs, reverseMap, id, element as T);
     }
   };
 
+  const defaultSelector = `[${refAttr}],[${refArrayAttr}],[${idAttr}]`;
   const mutationCallback = (mutations: MutationRecord[]): void => {
     mutations.forEach((mutation: MutationRecord) => {
-      // Handle added nodes
       const addedNodes: NodeList = mutation.addedNodes;
       addedNodes.forEach((node: Node) => {
         if (node.nodeType === Node.ELEMENT_NODE) {
           const element: Element = node as Element;
-          processElement(element);
-          const nestedElements: NodeListOf<Element> = element.querySelectorAll("*");
+          if (!selector || element.matches(selector)) {
+            processElement(element);
+          }
+          const nestedElements: NodeListOf<Element> = selector
+            ? element.querySelectorAll(selector)
+            : element.querySelectorAll(defaultSelector);
           nestedElements.forEach((nestedElement: Element) => processElement(nestedElement));
         }
       });
 
-      // Handle removed nodes
       const removedNodes: NodeList = mutation.removedNodes;
       removedNodes.forEach((node: Node) => {
         if (node.nodeType === Node.ELEMENT_NODE) {
           const element: Element = node as Element;
-          removeElement(refs, reverseMap, element);
-          const nestedElements: NodeListOf<Element> = element.querySelectorAll("*");
+          removeElement(refs, reverseMap, element as T);
+          const nestedElements: NodeListOf<Element> = selector
+            ? element.querySelectorAll(selector)
+            : element.querySelectorAll(defaultSelector);
           nestedElements.forEach((nestedElement: Element) =>
-            removeElement(refs, reverseMap, nestedElement)
+            removeElement(refs, reverseMap, nestedElement as T)
           );
         }
       });
@@ -231,54 +285,10 @@ function refWatcher(refs: RefsObject, root: Element | Document = document.body):
   };
 
   const observer: MutationObserver = new MutationObserver(mutationCallback);
-  const observerConfig: MutationObserverInit = {
-    childList: true,
-    subtree: true,
-  };
+  const observerConfig: MutationObserverInit = { childList: true, subtree: true };
   observer.observe(root, observerConfig);
 
-  return {
-    stop: (): void => observer.disconnect(),
-  };
+  return { stop: (): void => observer.disconnect() };
 }
 
 export { createRefs, refWatcher };
-
-// Example usage
-document.addEventListener("DOMContentLoaded", (): void => {
-  document.body.innerHTML = `
-    <div data-ref="my.item">My Item</div>
-    <span data-ref-array="items.list">List Item 1</span>
-    <span id="title">Title</span>
-  `;
-
-  const refs: RefsObject = createRefs(document.body);
-  const watcher: RefWatcher = refWatcher(refs);
-
-  console.log(refs.my.item);      // <div>
-  console.log(refs.items.list);   // [<span>]
-  console.log(refs.title);        // <span>
-
-  // Add and remove elements
-  const newItem: HTMLSpanElement = document.createElement("span");
-  newItem.setAttribute("data-ref-array", "items.list");
-  newItem.textContent = "List Item 2";
-  document.body.appendChild(newItem);
-
-  const newSingle: HTMLDivElement = document.createElement("div");
-  newSingle.setAttribute("data-ref", "my.single");
-  newSingle.textContent = "Single Item";
-  document.body.appendChild(newSingle);
-
-  setTimeout((): void => {
-    console.log(refs.items.list);   // [<span>, <span>]
-    console.log(refs.my.single);    // <div>
-    newItem.remove();               // Remove array item
-    newSingle.remove();             // Remove single ref
-    setTimeout((): void => {
-      console.log(refs.items.list); // [<span>]
-      console.log(refs.my.single);  // undefined
-      watcher.stop();
-    }, 100);
-  }, 100);
-});
