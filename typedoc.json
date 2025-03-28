@@ -5,7 +5,7 @@
     "outputs": [
         {
             "name": "markdown",
-            "path": "README.md"
+            "path": "docs"
         }
     ],
     "mergeReadme": true,
