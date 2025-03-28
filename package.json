@@ -16,6 +16,7 @@
   "scripts": {
     "build": "rslib build",
     "dev": "rslib build --watch",
+    "docs": "typedoc",
     "format": "prettier --write .",
     "lint": "eslint .",
     "test": "vitest"
@@ -29,6 +30,8 @@
     "globals": "^16.0.0",
     "jsdom": "^26.0.0",
     "prettier": "^3.5.2",
+    "typedoc": "^0.28.1",
+    "typedoc-plugin-markdown": "^4.6.0",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.25.0",
     "vitest": "^3.0.9"

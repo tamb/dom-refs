@@ -1,0 +1,14 @@
+{
+    "plugin": ["typedoc-plugin-markdown"],
+    "entryPoints": ["src/index.ts"],
+    "exclude": ["**/*.test.ts", "node_modules", "**config.ts", "**/dist"],
+    "outputs": [
+        {
+            "name": "markdown",
+            "path": "README.md"
+        }
+    ],
+    "mergeReadme": true,
+    "flattenOutputFiles": true,
+    "router": "module"
+}
