@@ -1,48 +1,47 @@
 /// <reference lib="dom" />
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { createRefs, refWatcher } from './index';
+import { createRefs, watchRefs, IRefsObject, RefEventsEnum } from './index';
 
-describe('Refs Library', () => {
+describe('DOM Refs Library', () => {
   let root: HTMLDivElement;
 
   beforeEach(() => {
-    // Reset DOM before each test
     document.body.innerHTML = '';
     root = document.createElement('div');
     document.body.appendChild(root);
   });
 
   describe('createRefs', () => {
-    it('creates refs from data-ref attributes', () => {
+    it('creates nested refs from data-ref attributes with dots', () => {
       const div = document.createElement('div');
       div.setAttribute('data-ref', 'header.title');
       root.appendChild(div);
 
-      const { refs } = createRefs(root);
-      expect(refs.header.title).toBe(div);
+      const refs = createRefs(root);
+      expect((refs.header as IRefsObject).title).toBe(div);
     });
 
-    it('creates array refs from data-ref-array attributes', () => {
+    it('creates array refs from data-ref-array attributes with dots', () => {
       const div1 = document.createElement('div');
-      div1.setAttribute('data-ref-array', 'items, list');
+      div1.setAttribute('data-ref-array', 'items.list, items.other');
       const div2 = document.createElement('div');
-      div2.setAttribute('data-ref-array', 'items');
+      div2.setAttribute('data-ref-array', 'items.list');
       root.appendChild(div1);
       root.appendChild(div2);
 
-      const { refs } = createRefs(root);
-      expect(refs.items).toEqual([div1, div2]);
-      expect(refs.list).toEqual([div1]);
+      const refs = createRefs(root);
+      expect((refs.items as IRefsObject).list).toEqual([div1, div2]);
+      expect((refs.items as IRefsObject).other).toEqual([div1]);
     });
 
-    it('creates refs from id attributes', () => {
+    it('creates nested refs from id attributes with dots', () => {
       const div = document.createElement('div');
-      div.id = 'main';
+      div.id = 'main.section';
       root.appendChild(div);
 
-      const { refs } = createRefs(root);
-      expect(refs.main).toBe(div);
+      const refs = createRefs(root);
+      expect((refs.main as IRefsObject).section).toBe(div);
     });
 
     it('respects custom selector', () => {
@@ -54,9 +53,9 @@ describe('Refs Library', () => {
       root.appendChild(div1);
       root.appendChild(div2);
 
-      const { refs } = createRefs(root, { selector: '.ref-item' });
-      expect(refs.test.one).toBe(div1);
-      expect(refs.test.two).toBeUndefined();
+      const refs = createRefs(root, { selector: '.ref-item' });
+      expect((refs.test as IRefsObject).one).toBe(div1);
+      expect((refs.test as IRefsObject).two).toBeUndefined();
     });
 
     it('respects custom attribute names', () => {
@@ -64,46 +63,19 @@ describe('Refs Library', () => {
       div.setAttribute('custom-ref', 'header.title');
       root.appendChild(div);
 
-      const { refs } = createRefs(root, { refAttr: 'custom-ref' });
-      expect(refs.header.title).toBe(div);
-    });
-
-    it('clears all refs', () => {
-      const div = document.createElement('div');
-      div.setAttribute('data-ref', 'header.title');
-      root.appendChild(div);
-
-      const { refs, clear } = createRefs(root);
-      expect(refs.header.title).toBe(div);
-      clear();
-      expect(refs.header).toBeUndefined();
-    });
-
-    it('maintains reverseMap correctly', () => {
-      const div = document.createElement('div');
-      div.setAttribute('data-ref', 'header.title');
-      div.setAttribute('data-ref-array', 'items');
-      root.appendChild(div);
-
-      const { reverseMap } = createRefs(root);
-      const paths = reverseMap.get(div);
-      expect(paths).toEqual(['header.title', 'items']);
-    });
-
-    it('works with generic types', () => {
-      const div = document.createElement('div');
-      div.setAttribute('data-ref', 'test.div');
-      root.appendChild(div);
-
-      const { refs } = createRefs<HTMLDivElement>(root);
-      expect(refs.test.div).toBeInstanceOf(HTMLDivElement);
+      const refs = createRefs(root, { refAttr: 'custom-ref' });
+      expect((refs.header as IRefsObject).title).toBe(div);
     });
   });
 
-  describe('refWatcher', () => {
-    it('adds new elements dynamically', async () => {
-      const { refs, reverseMap } = createRefs(root);
-      const watcher = refWatcher(refs, root);
+  describe('watchRefs', () => {
+    it('adds new elements dynamically and fires event', async () => {
+      const refs = createRefs(root);
+      const watcher = watchRefs(refs, root);
+      const addedEvents: CustomEvent[] = [];
+      document.addEventListener(RefEventsEnum.ADDED, (e) =>
+        addedEvents.push(e as CustomEvent),
+      );
 
       const div = document.createElement('div');
       div.setAttribute('data-ref', 'dynamic.test');
@@ -111,8 +83,10 @@ describe('Refs Library', () => {
 
       await vi.waitFor(
         () => {
-          expect(refs.dynamic.test).toBe(div);
-          expect(reverseMap.get(div)).toEqual(['dynamic.test']);
+          expect((refs.dynamic as IRefsObject).test).toBe(div);
+          expect(addedEvents.length).toBe(1);
+          expect(addedEvents[0].detail.ref).toBe(div);
+          expect(addedEvents[0].detail.key).toBe('dynamic.test');
         },
         { timeout: 100 },
       );
@@ -120,20 +94,26 @@ describe('Refs Library', () => {
       watcher.stop();
     });
 
-    it('removes elements dynamically', async () => {
+    it('removes elements dynamically and fires event', async () => {
       const div = document.createElement('div');
       div.setAttribute('data-ref', 'dynamic.test');
       root.appendChild(div);
 
-      const { refs, reverseMap } = createRefs(root);
-      const watcher = refWatcher(refs, root);
+      const refs = createRefs(root);
+      const watcher = watchRefs(refs, root);
+      const removedEvents: CustomEvent[] = [];
+      document.addEventListener(RefEventsEnum.REMOVED, (e) =>
+        removedEvents.push(e as CustomEvent),
+      );
 
       root.removeChild(div);
 
       await vi.waitFor(
         () => {
           expect(refs.dynamic).toBeUndefined();
-          expect(reverseMap.get(div)).toBeUndefined();
+          expect(removedEvents.length).toBe(1);
+          expect(removedEvents[0].detail.ref).toBe(div);
+          expect(removedEvents[0].detail.key).toBe('dynamic.test');
         },
         { timeout: 100 },
       );
@@ -142,8 +122,12 @@ describe('Refs Library', () => {
     });
 
     it('respects selector in watcher', async () => {
-      const { refs } = createRefs(root);
-      const watcher = refWatcher(refs, root, { selector: '.watch-me' });
+      const refs = createRefs(root);
+      const watcher = watchRefs(refs, root, { selector: '.watch-me' });
+      const addedEvents: CustomEvent[] = [];
+      document.addEventListener('domRefs.elementAdded', (e) =>
+        addedEvents.push(e as CustomEvent),
+      );
 
       const div1 = document.createElement('div');
       div1.setAttribute('data-ref', 'test.one');
@@ -155,8 +139,10 @@ describe('Refs Library', () => {
 
       await vi.waitFor(
         () => {
-          expect(refs.test.one).toBe(div1);
-          expect(refs.test.two).toBeUndefined();
+          expect((refs.test as IRefsObject).one).toBe(div1);
+          expect((refs.test as IRefsObject).two).toBeUndefined();
+          expect(addedEvents.length).toBe(1);
+          expect(addedEvents[0].detail.key).toBe('test.one');
         },
         { timeout: 100 },
       );
@@ -165,8 +151,12 @@ describe('Refs Library', () => {
     });
 
     it('handles nested elements', async () => {
-      const { refs } = createRefs(root);
-      const watcher = refWatcher(refs, root);
+      const refs = createRefs(root);
+      const watcher = watchRefs(refs, root);
+      const addedEvents: CustomEvent[] = [];
+      document.addEventListener('domRefs.elementAdded', (e) =>
+        addedEvents.push(e as CustomEvent),
+      );
 
       const parent = document.createElement('div');
       const child = document.createElement('div');
@@ -176,7 +166,9 @@ describe('Refs Library', () => {
 
       await vi.waitFor(
         () => {
-          expect(refs.nested.child).toBe(child);
+          expect((refs.nested as IRefsObject).child).toBe(child);
+          expect(addedEvents.length).toBe(1);
+          expect(addedEvents[0].detail.key).toBe('nested.child');
         },
         { timeout: 100 },
       );
@@ -185,8 +177,8 @@ describe('Refs Library', () => {
     });
 
     it('stops watching when stop is called', async () => {
-      const { refs } = createRefs(root);
-      const watcher = refWatcher(refs, root);
+      const refs = createRefs(root);
+      const watcher = watchRefs(refs, root);
       watcher.stop();
 
       const div = document.createElement('div');
@@ -202,8 +194,12 @@ describe('Refs Library', () => {
     });
 
     it('respects custom attribute names in watcher', async () => {
-      const { refs } = createRefs(root);
-      const watcher = refWatcher(refs, root, { refAttr: 'custom-ref' });
+      const refs = createRefs(root);
+      const watcher = watchRefs(refs, root, { refAttr: 'custom-ref' });
+      const addedEvents: CustomEvent[] = [];
+      document.addEventListener('domRefs.elementAdded', (e) =>
+        addedEvents.push(e as CustomEvent),
+      );
 
       const div = document.createElement('div');
       div.setAttribute('custom-ref', 'custom.test');
@@ -211,7 +207,9 @@ describe('Refs Library', () => {
 
       await vi.waitFor(
         () => {
-          expect(refs.custom.test).toBe(div);
+          expect((refs.custom as IRefsObject).test).toBe(div);
+          expect(addedEvents.length).toBe(1);
+          expect(addedEvents[0].detail.key).toBe('custom.test');
         },
         { timeout: 100 },
       );
@@ -223,34 +221,33 @@ describe('Refs Library', () => {
   describe('Edge Cases', () => {
     it('handles duplicate data-ref values', () => {
       const div1 = document.createElement('div');
-      div1.setAttribute('data-ref', 'test');
+      div1.setAttribute('data-ref', 'test.value');
       const div2 = document.createElement('div');
-      div2.setAttribute('data-ref', 'test');
+      div2.setAttribute('data-ref', 'test.value');
       root.appendChild(div1);
       root.appendChild(div2);
 
-      const { refs } = createRefs(root);
-      expect(refs.test).toBe(div2); // Last one wins
+      const refs = createRefs(root);
+      expect((refs.test as IRefsObject).value).toBe(div2); // Last one wins
     });
 
     it('handles malformed data-ref-array', () => {
       const div = document.createElement('div');
-      div.setAttribute('data-ref-array', 'items,, ,list');
+      div.setAttribute('data-ref-array', 'items.list,, ,items.other');
       root.appendChild(div);
 
-      const { refs } = createRefs(root);
-      expect(refs.items).toEqual([div]);
-      expect(refs.list).toEqual([div]);
+      const refs = createRefs(root);
+      expect((refs.items as IRefsObject).list).toEqual([div]);
+      expect((refs.items as IRefsObject).other).toEqual([div]);
     });
 
     it('handles empty refs object', () => {
-      const { refs, clear } = createRefs(root);
+      const refs = createRefs(root);
       expect(Object.keys(refs).length).toBe(0);
-      clear(); // Should not throw
     });
 
     it('handles invalid selector gracefully', () => {
-      const { refs } = createRefs(root, { selector: 'invalid::selector' });
+      const refs = createRefs(root, { selector: 'invalid::selector' });
       expect(Object.keys(refs).length).toBe(0); // No matches, no crash
     });
   });
